@@ -9,10 +9,10 @@ import os
 GUMROAD_TOKEN = os.getenv("GUMROAD_TOKEN")
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASS = os.getenv("SMTP_PASS")
+TO_EMAIL = os.getenv("TO_EMAIL")
 
 # Constants
 FROM_EMAIL = "noreply@thattemplateplace.com"
-TO_EMAIL = "weeklyreport@thattemplateplace.com"
 REPLY_TO_EMAIL = "hello@thattemplateplace.com"
 
 # Gumroad API URLs
