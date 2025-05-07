@@ -21,29 +21,45 @@ GUMROAD_PRODUCTS_URL = "https://api.gumroad.com/v2/products"
 
 def fetch_sales():
     url = GUMROAD_SALES_URL
-    params = {"access_token": GUMROAD_TOKEN}
-    response = requests.get(url, params=params)
-    return response.json().get("sales", [])
+    params = {"access_token": GUMROAD_TOKEN, "page": 1}
+    all_sales = []
+    one_week_ago = datetime.utcnow() - timedelta(days=7)
+
+    while True:
+        response = requests.get(url, params=params)
+        data = response.json()
+        sales = data.get("sales", [])
+        if not sales:
+            break
+
+        # Only include sales within the last 7 days
+        for sale in sales:
+            sale_date = datetime.strptime(sale["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+            if sale_date >= one_week_ago:
+                all_sales.append(sale)
+            else:
+                # Stop early if the rest of the sales are older than a week
+                return all_sales
+
+        # Move to next page
+        params["page"] += 1
+
+    return all_sales
+
 
 def fetch_products():
     url = GUMROAD_PRODUCTS_URL
     params = {"access_token": GUMROAD_TOKEN}
     response = requests.get(url, params=params)
     return response.json().get("products", [])
-
 def build_email_body(sales, products):
-    this_week = datetime.utcnow() - timedelta(days=7)
-    weekly_sales = [
-        s for s in sales if datetime.strptime(s["created_at"], "%Y-%m-%dT%H:%M:%SZ") > this_week
-    ]
-    
     # Prepare sales data and earnings
     sales_by_product = {}
     earnings_by_product = {}
     total_sales = 0
     total_earnings = 0
 
-    for sale in weekly_sales:
+    for sale in sales:
         pid = sale["product_id"]
         price = float(sale["price"])
         sales_by_product[pid] = sales_by_product.get(pid, 0) + 1
@@ -144,19 +160,19 @@ def build_email_body(sales, products):
             </thead>
             <tbody>
     """
-    
+
     for product in products:
         product_id = product['id']
         sales_count = sales_by_product.get(product_id, 0)
         earnings = earnings_by_product.get(product_id, 0)
         email_body += f"""
-            <tr>
-              <td style="padding: 12px 16px;">{product['name']}</td>
-              <td style="padding: 12px 16px; text-align:right;">{sales_count}</td>
-              <td style="padding: 12px 16px; text-align:right;">${earnings:.2f}</td>
-            </tr>
+              <tr>
+                <td style="padding: 12px 16px;">{product['name']}</td>
+                <td style="padding: 12px 16px; text-align:right;">{sales_count}</td>
+                <td style="padding: 12px 16px; text-align:right;">${earnings:.2f}</td>
+              </tr>
         """
-    
+
     email_body += f"""
             </tbody>
           </table>
@@ -172,6 +188,7 @@ def build_email_body(sales, products):
     </html>
     """
     return email_body
+
 
 def send_email(body):
     msg = MIMEMultipart()
