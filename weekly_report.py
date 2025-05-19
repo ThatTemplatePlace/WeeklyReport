@@ -27,21 +27,24 @@ def fetch_sales():
 
     while True:
         response = requests.get(url, params=params)
+        if response.status_code != 200:
+            print("❌ Failed to fetch sales:", response.text)
+            break
+
         data = response.json()
         sales = data.get("sales", [])
         if not sales:
             break
 
-        # Only include sales within the last 7 days
         for sale in sales:
-            sale_date = datetime.strptime(sale["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-            if sale_date >= one_week_ago:
-                all_sales.append(sale)
-            else:
-                # Stop early if the rest of the sales are older than a week
-                return all_sales
+            try:
+                sale_date = datetime.strptime(sale["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+                if sale_date >= one_week_ago:
+                    all_sales.append(sale)
+            except Exception as e:
+                print("❌ Error parsing sale:", sale, e)
 
-        # Move to next page
+        # Keep paginating even if some sales are older
         params["page"] += 1
 
     return all_sales
@@ -52,8 +55,14 @@ def fetch_products():
     params = {"access_token": GUMROAD_TOKEN}
     response = requests.get(url, params=params)
     return response.json().get("products", [])
+    
 def build_email_body(sales, products):
     # Prepare sales data and earnings
+    product_names = {product['id']: product['name'] for product in products}
+
+    # In the loop:
+    name = product_names.get(product_id, "Unknown Product")
+
     sales_by_product = {}
     earnings_by_product = {}
     total_sales = 0
