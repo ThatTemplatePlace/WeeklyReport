@@ -216,9 +216,13 @@ def send_email(body):
             print("✅ Email sent successfully!")
     except Exception as e:
         print(f"❌ Failed to send email: {e}")
-
+        
 if __name__ == "__main__":
     sales = fetch_sales()
+    print(f"🧾 Fetched {len(sales)} sales from last 7 days")
+
     products = fetch_products()
+    print(f"📦 Fetched {len(products)} products")
+
     email_body = build_email_body(sales, products)
     send_email(email_body)
