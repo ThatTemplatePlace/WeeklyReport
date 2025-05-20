@@ -19,35 +19,47 @@ REPLY_TO_EMAIL = "hello@thattemplateplace.com"
 GUMROAD_SALES_URL = "https://api.gumroad.com/v2/sales"
 GUMROAD_PRODUCTS_URL = "https://api.gumroad.com/v2/products"
 
-def fetch_sales():
-    url = GUMROAD_SALES_URL
-    params = {"access_token": GUMROAD_TOKEN, "page": 1}
-    all_sales = []
-    one_week_ago = datetime.utcnow() - timedelta(days=7)
+
+def fetch_sales(token, from_date_str, to_date_str):
+    sales = []
+    page_key = None
+
+    from_date = datetime.strptime(from_date_str, '%Y-%m-%d').date()
+    to_date = datetime.strptime(to_date_str, '%Y-%m-%d').date()
 
     while True:
-        response = requests.get(url, params=params)
-        if response.status_code != 200:
-            print("❌ Failed to fetch sales:", response.text)
-            break
+        params = {
+            'access_token': token,
+            'from': from_date_str,
+            'to': to_date_str
+        }
+        if page_key:
+            params['page_key'] = page_key
+
+        response = requests.get(
+            GUMROAD_SALES_URL,
+            params=params
+        )
 
         data = response.json()
-        sales = data.get("sales", [])
-        if not sales:
+        if 'sales' not in data:
+            print(f"❌ Failed to fetch sales: {data}")
+            return []
+
+        # Filter out sales outside the strict 7-day window
+        for sale in data['sales']:
+            sale_date = datetime.strptime(sale['created_at'], '%Y-%m-%dT%H:%M:%SZ').date()
+            if from_date <= sale_date <= to_date:
+                # Normalize price by dividing by 100
+                sale['price'] = float(sale['price']) / 100
+                sales.append(sale)
+
+        page_key = data.get('next_page_key')
+        if not page_key:
             break
 
-        for sale in sales:
-            try:
-                sale_date = datetime.strptime(sale["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-                if sale_date >= one_week_ago:
-                    all_sales.append(sale)
-            except Exception as e:
-                print("❌ Error parsing sale:", sale, e)
-
-        # Keep paginating even if some sales are older
-        params["page"] += 1
-
-    return all_sales
+    print(f"🧾 Filtered {len(sales)} sales from {from_date_str} to {to_date_str}")
+    return sales
 
 
 def fetch_products():
@@ -55,13 +67,9 @@ def fetch_products():
     params = {"access_token": GUMROAD_TOKEN}
     response = requests.get(url, params=params)
     return response.json().get("products", [])
-    
-def build_email_body(sales, products):
-    # Prepare sales data and earnings
-    product_names = {product['id']: product['name'] for product in products}
 
-    # In the loop:
-    name = product_names.get(product_id, "Unknown Product")
+def build_email_body(sales, products):
+    product_names = {product['id']: product['name'] for product in products}
 
     sales_by_product = {}
     earnings_by_product = {}
@@ -70,13 +78,12 @@ def build_email_body(sales, products):
 
     for sale in sales:
         pid = sale["product_id"]
-        price = float(sale["price"])
+        price = float(sale["price"]) / 100  # Convert from cents to dollars
         sales_by_product[pid] = sales_by_product.get(pid, 0) + 1
         earnings_by_product[pid] = earnings_by_product.get(pid, 0) + price
         total_sales += 1
         total_earnings += price
 
-    # Build email body (HTML format)
     email_body = f"""
     <!DOCTYPE html>
     <html>
@@ -171,12 +178,16 @@ def build_email_body(sales, products):
     """
 
     for product in products:
+        if 'id' not in product or 'name' not in product:
+            continue
+
         product_id = product['id']
+        product_name = product['name']
         sales_count = sales_by_product.get(product_id, 0)
         earnings = earnings_by_product.get(product_id, 0)
         email_body += f"""
               <tr>
-                <td style="padding: 12px 16px;">{product['name']}</td>
+                <td style="padding: 12px 16px;">{product_name}</td>
                 <td style="padding: 12px 16px; text-align:right;">{sales_count}</td>
                 <td style="padding: 12px 16px; text-align:right;">${earnings:.2f}</td>
               </tr>
@@ -189,7 +200,7 @@ def build_email_body(sales, products):
           <p style="margin-top: 30px;">Best regards,<br>ThatTemplatePlace</p>
         </div>
         <div class="footer">
-          Note that this email is sent from an unmonitored inbox. Do not reply. If unsure as to where to direct questions, email hello@thattemplateplace.com <br> 
+          Note that this email is sent from an unmonitored inbox. Do not reply. If unsure where to direct questions, email hello@thattemplateplace.com <br> 
           © {datetime.utcnow().year} ThatTemplatePlace. All rights reserved.
         </div>
       </div>
@@ -197,7 +208,6 @@ def build_email_body(sales, products):
     </html>
     """
     return email_body
-
 
 def send_email(body):
     msg = MIMEMultipart()
@@ -216,13 +226,13 @@ def send_email(body):
             print("✅ Email sent successfully!")
     except Exception as e:
         print(f"❌ Failed to send email: {e}")
-        
+
 if __name__ == "__main__":
-    sales = fetch_sales()
-    print(f"🧾 Fetched {len(sales)} sales from last 7 days")
+    to_date = datetime.utcnow().strftime('%Y-%m-%d')
+    from_date = (datetime.utcnow() - timedelta(days=7)).strftime('%Y-%m-%d')
 
+    sales = fetch_sales(GUMROAD_TOKEN, from_date, to_date)
     products = fetch_products()
-    print(f"📦 Fetched {len(products)} products")
-
     email_body = build_email_body(sales, products)
     send_email(email_body)
+
